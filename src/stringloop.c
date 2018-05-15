@@ -9,7 +9,7 @@ int main(void) {
 
   if (s == NULL) {
     fprintf(stderr, "Can't allocate mem with malloc\n");
-    return (EXIT_FAILURE);
+    return EXIT_FAILURE;
   }
 
   // Infinite loop until we hack the string
@@ -26,5 +26,5 @@ int main(void) {
   // Free memory
   free(s);
 
-  return (EXIT_SUCCESS);
+  return EXIT_SUCCESS;
 }

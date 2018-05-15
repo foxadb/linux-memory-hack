@@ -1,19 +1,77 @@
+#include <dirent.h>
+#include <fcntl.h>
+#include <regex.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
-#include <fcntl.h>
 #include <sys/ptrace.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <unistd.h>
+
+long findPidByName(char* procname) {
+  // Pid to be returned
+  long pid = -1;
+
+  // Regex for pid and process name
+  regex_t number;
+  regex_t name;
+  regcomp(&number, "^[0-9]\\+$", 0);
+  regcomp(&name, procname, 0);
+
+  // Go to proc dir and open it
+  chdir("/proc");
+  DIR* proc = opendir("/proc");
+
+  // Iterate through proc dir
+  struct dirent* dp;
+  char buf[4096];
+  while (dp = readdir(proc)) {
+    // Only consider dir with pid name
+    if (regexec(&number, dp->d_name, 0, 0, 0) == 0) {
+      chdir(dp->d_name);
+
+      // Open cmdline file
+      int fd = open("cmdline", O_RDONLY);
+
+      // Read file into the buffer
+      buf[read(fd, buf, (sizeof buf) - 1)] = '\0';
+
+      if (regexec(&name, buf, 0, 0, 0) == 0) {
+        if (pid != -1) {
+          fprintf(stderr, "Second process %s found: %s\n", dp->d_name, buf);
+          return -1;
+        }
+        pid = atoi(dp->d_name);
+        printf("Process %d found: %s\n", pid, buf);
+      }
+
+      // Close cmdline file
+      close(fd);
+
+      // Go back to proc dir
+      chdir("..");
+    }
+  }
+
+  // Close proc dir
+  closedir(proc);
+
+  return pid;
+}
 
 int main(int argc, char* argv[]) {
   // Process id
-  int pid = atoi(argv[1]);
+  long pid = findPidByName("stringloop");
+
+  if (pid == -1) {
+    fprintf(stderr, "Process id not found\n");
+    return EXIT_FAILURE;
+  }
 
   // Memory file path
   char memfile[64];
-  sprintf(memfile, "/proc/%ld/mem", (long)pid);
+  sprintf(memfile, "/proc/%ld/mem", pid);
 
   // Open memory file
   printf("Open memfile: %s\n", memfile);
@@ -26,7 +84,7 @@ int main(int argc, char* argv[]) {
   waitpid(pid, NULL, 0);
 
   // Retreive the string address
-  off_t addr = (off_t)strtol(argv[2], NULL, 16);
+  off_t addr = (off_t)strtol(argv[1], NULL, 16);
 
   // Variable to store the string value
   char value[64];
@@ -46,5 +104,5 @@ int main(int argc, char* argv[]) {
   // Close memory file
   close(fd);
 
-  return (EXIT_SUCCESS);
+  return EXIT_SUCCESS;
 }
