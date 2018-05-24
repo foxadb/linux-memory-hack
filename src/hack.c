@@ -60,6 +60,60 @@ long findPidByName(char* procname) {
   return pid;
 }
 
+off_t findHeapAddress(long pid) {
+  // Init heap address to be returned
+  off_t heapAddr = -1;
+
+  // Open maps file
+  char mapsfile[64];
+  sprintf(mapsfile, "/proc/%ld/maps", pid);
+  FILE* fp = fopen(mapsfile, "r");
+  if (fp == NULL) {
+    return -1;
+  }
+
+  // Read the maps file
+  char* line = NULL;
+  size_t len = 0;
+  char* heapWord = "[heap]";
+  while (getline(&line, &len, fp) != -1) {
+    if (strstr(line, heapWord) != NULL) {
+      // Line is the heap
+      char* address = strtok(line, "-");
+      heapAddr = (off_t)strtol(address, NULL, 16);
+    }
+  }
+
+  // Free line
+  if (line) {
+    free(line);
+  }
+
+  // Close file
+  fclose(fp);
+
+  return heapAddr;
+}
+
+off_t findStringAddress(int fd, off_t heapAddr, char* string) {
+  // Init first address to be read
+  off_t addr = heapAddr;
+
+  char value[64];
+  int counter = 0;
+  int maxCounter = 1000000;
+
+  // Iterating through the mem file 
+  pread(fd, &value, sizeof(value), addr);
+  while (strcmp(string, value) != 0 && counter < maxCounter) {
+    ++addr;
+    pread(fd, &value, sizeof(value), addr);
+    ++counter;
+  }
+
+  return (counter < maxCounter) ? addr : -1;
+}
+
 int main(int argc, char* argv[]) {
   // Process id
   long pid = findPidByName("stringloop");
@@ -83,8 +137,21 @@ int main(int argc, char* argv[]) {
   // Wait for sync
   waitpid(pid, NULL, 0);
 
+  // Find heap start address
+  off_t heapAddr = findHeapAddress(pid);
+  if (heapAddr == -1) {
+    fprintf(stderr, "Head address not found\n");
+    return EXIT_FAILURE;
+  }
+  printf("Head address: 0x%lx\n", heapAddr);
+
   // Retreive the string address
-  off_t addr = (off_t)strtol(argv[1], NULL, 16);
+  off_t addr = findStringAddress(fd, heapAddr, "Change me please");
+  if (addr == -1) {
+    fprintf(stderr, "String not found\n");
+    return EXIT_FAILURE;
+  }
+  printf("String address: 0x%lx\n", addr);
 
   // Variable to store the string value
   char value[64];
