@@ -15,13 +15,13 @@ int main(void) {
   // Infinite loop until we hack the string
   int i = 0;
   while (strcmp(s, "It is true magic") != 0) {
-    printf("%lu - %s (%p)\n", i, s, (void *)s);
+    printf("%lu - %s (%p)\n", i, s, (void*)s);
     sleep(1);
     ++i;
   }
 
   // Print the hacked string
-  printf("%lu - %s (%p)\n", i, s, (void *)s);
+  printf("%lu - %s (%p)\n", i, s, (void*)s);
 
   // Free memory
   free(s);

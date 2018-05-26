@@ -1,9 +1,11 @@
+#define _GNU_SOURCE
 #include <dirent.h>
 #include <fcntl.h>
 #include <regex.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
 long findPidByName(char* procname) {
@@ -57,9 +59,9 @@ long findPidByName(char* procname) {
   return pid;
 }
 
-off_t findHeapAddress(long pid) {
+unsigned long findHeapAddress(long pid) {
   // Init heap address to be returned
-  off_t heapAddr = -1;
+  unsigned long heapAddr = -1;
 
   // Open maps file
   char mapsfile[64];
@@ -77,7 +79,7 @@ off_t findHeapAddress(long pid) {
     if (strstr(line, heapWord) != NULL) {
       // Line is the heap
       char* address = strtok(line, "-");
-      heapAddr = (off_t)strtol(address, NULL, 16);
+      heapAddr = (unsigned long)strtol(address, NULL, 16);
     }
   }
 
@@ -92,23 +94,42 @@ off_t findHeapAddress(long pid) {
   return heapAddr;
 }
 
-off_t findStringAddress(int fd, off_t heapAddr, char* string) {
-  // Init first address to be read
-  off_t addr = heapAddr;
+unsigned long findStringAddress(long pid, unsigned long heapAddr, char* string,
+                                size_t size) {
+  struct iovec local[1];
+  struct iovec remote[1];
+  char buf[64];
+  
+  local[0].iov_base = buf;
+  local[0].iov_len = 64;
+  remote[0].iov_base = (void*)heapAddr;
+  remote[0].iov_len = size;
 
-  char value[64];
   int counter = 0;
-  int maxCounter = 1000000;
-
-  // Iterating through the mem file 
-  pread(fd, &value, sizeof(value), addr);
-  while (strcmp(string, value) != 0 && counter < maxCounter) {
-    ++addr;
-    pread(fd, &value, sizeof(value), addr);
+  int maxCounter = 1000000; // max iterations
+  
+  // Iterate through heap
+  process_vm_readv(pid, local, 1, remote, 1, 0);
+  while (strcmp(string, local[0].iov_base) != 0 && counter < maxCounter) {
+    ++remote[0].iov_base;
+    process_vm_readv(pid, local, 1, remote, 1, 0);
     ++counter;
   }
 
-  return (counter < maxCounter) ? addr : -1;
+  unsigned long result = (unsigned long)remote[0].iov_base;
+  return (counter < maxCounter) ? result : -1;
+}
+
+int writeOnStringAddress(long pid, unsigned long addr, char* stringBuf, size_t size) {
+  struct iovec local[1];
+  struct iovec remote[1];
+  
+  local[0].iov_base = stringBuf;
+  local[0].iov_len = size;
+  remote[0].iov_base = (void*)addr;
+  remote[0].iov_len = size;
+
+  return (process_vm_writev(pid, local, 1, remote, 1, 0) == size);
 }
 
 int main(int argc, char* argv[]) {
@@ -120,42 +141,35 @@ int main(int argc, char* argv[]) {
     return EXIT_FAILURE;
   }
 
-  // Memory file path
-  char memfile[64];
-  sprintf(memfile, "/proc/%ld/mem", pid);
-
-  // Open memory file
-  printf("Open memfile: %s\n", memfile);
-  int fd = open(memfile, O_RDWR);
-
   // Find heap start address
-  off_t heapAddr = findHeapAddress(pid);
+  unsigned long heapAddr = findHeapAddress(pid);
   if (heapAddr == -1) {
     fprintf(stderr, "Heap address not found\n");
     return EXIT_FAILURE;
   }
   printf("Heap address: 0x%lx\n", heapAddr);
 
+  char* oldString = "Change me please";
+  char* newString = "It is true magic";
+  size_t stringSize = 16;
+
   // Retreive the string address
-  off_t addr = findStringAddress(fd, heapAddr, "Change me please");
+  unsigned long addr = findStringAddress(pid, heapAddr, oldString, stringSize);
   if (addr == -1) {
     fprintf(stderr, "String not found\n");
     return EXIT_FAILURE;
   }
   printf("String address: 0x%lx\n", addr);
 
-  // Read memory value
-  char value[64];
-  pread(fd, &value, sizeof(value), addr);
-  printf("String value read at 0x%lx: %s\n", addr, value);
+  // Write the new string on memory
+  int writeRes = writeOnStringAddress(pid, addr, newString, stringSize);
 
-  // Copy the new string and write it on memory
-  strcpy(value, "It is true magic");
-  printf("Change it to: %s\n", value);
-  pwrite(fd, &value, sizeof(value), addr);
-
-  // Close memory file
-  close(fd);
+  if (writeRes) {
+    printf("Writing operation successful :)\n");
+  } else {
+    fprintf(stderr, "Error when writing memory\n");
+    return EXIT_FAILURE;
+  }
 
   return EXIT_SUCCESS;
 }
