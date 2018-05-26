@@ -4,9 +4,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ptrace.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 long findPidByName(char* procname) {
@@ -131,19 +128,13 @@ int main(int argc, char* argv[]) {
   printf("Open memfile: %s\n", memfile);
   int fd = open(memfile, O_RDWR);
 
-  // Trace process
-  ptrace(PTRACE_ATTACH, pid, 0, 0);
-
-  // Wait for sync
-  waitpid(pid, NULL, 0);
-
   // Find heap start address
   off_t heapAddr = findHeapAddress(pid);
   if (heapAddr == -1) {
-    fprintf(stderr, "Head address not found\n");
+    fprintf(stderr, "Heap address not found\n");
     return EXIT_FAILURE;
   }
-  printf("Head address: 0x%lx\n", heapAddr);
+  printf("Heap address: 0x%lx\n", heapAddr);
 
   // Retreive the string address
   off_t addr = findStringAddress(fd, heapAddr, "Change me please");
@@ -153,10 +144,8 @@ int main(int argc, char* argv[]) {
   }
   printf("String address: 0x%lx\n", addr);
 
-  // Variable to store the string value
-  char value[64];
-
   // Read memory value
+  char value[64];
   pread(fd, &value, sizeof(value), addr);
   printf("String value read at 0x%lx: %s\n", addr, value);
 
@@ -164,9 +153,6 @@ int main(int argc, char* argv[]) {
   strcpy(value, "It is true magic");
   printf("Change it to: %s\n", value);
   pwrite(fd, &value, sizeof(value), addr);
-
-  // Detache process
-  ptrace(PTRACE_DETACH, pid, 0, 0);
 
   // Close memory file
   close(fd);
