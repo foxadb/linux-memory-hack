@@ -1,6 +1,6 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
 
-project (proc-memhack)
+project (linux-memory-hack)
 
 # Generate examples process
 add_executable (hack src/hack.c)

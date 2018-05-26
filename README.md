@@ -1,4 +1,4 @@
-# Process memory hack
+# Simple Linux memory hack example
 
 This project shows a basic example on how to hack the memory of a Linux process.
 
@@ -32,19 +32,18 @@ The executable will find the pid alone by looking through the `/proc` directory,
 Terminal 1:
 ```
 ./stringloop
-0 - Change me please (0x55d19ec59260)
-1 - Change me please (0x55d19ec59260)
-2 - Change me please (0x55d19ec59260)
-3 - It is true magic (0x55d19ec59260)
+0 - Change me please (0x556c0936d260)
+1 - Change me please (0x556c0936d260)
+2 - Change me please (0x556c0936d260)
+3 - Change me please (0x556c0936d260)
+4 - It is true magic (0x556c0936d260)
 ```
 
 Terminal 2:
 ```
 sudo ./hack
-Process 11873 found: ./stringloop
-Open memfile: /proc/11873/mem
-Head address: 0x55d19ec59000
-String address: 0x55d19ec59260
-String value read at 0x55d19ec59260: Change me please
-Change it to: It is true magic
+Process 5445 found: ./stringloop
+Heap address: 0x556c0936d000
+String address: 0x556c0936d260
+Writing operation successful :)
 ```
