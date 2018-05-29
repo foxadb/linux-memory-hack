@@ -4,6 +4,9 @@
 #include <unistd.h>
 
 int main(void) {
+  // Print the process id
+  printf("Process ID : %d\n", getpid());
+
   // Allocate the string in memory
   char *s = strdup("Change me please");
 

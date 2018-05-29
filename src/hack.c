@@ -59,10 +59,8 @@ long findPidByName(char* procname) {
   return pid;
 }
 
-unsigned long findHeapAddress(long pid) {
-  // Init heap address to be returned
-  unsigned long heapAddr = -1;
-
+int findHeapAddress(long pid, unsigned long* heapStart,
+                    unsigned long* heapEnd) {
   // Open maps file
   char mapsfile[64];
   sprintf(mapsfile, "/proc/%ld/maps", pid);
@@ -75,11 +73,35 @@ unsigned long findHeapAddress(long pid) {
   char* line = NULL;
   size_t len = 0;
   char* heapWord = "[heap]";
-  while (getline(&line, &len, fp) != -1) {
+  int found = 0;
+  while (getline(&line, &len, fp) != -1 && !found) {
     if (strstr(line, heapWord) != NULL) {
-      // Line is the heap
-      char* address = strtok(line, "-");
-      heapAddr = (unsigned long)strtol(address, NULL, 16);
+      char addr1[16];
+      char addr2[16];
+      int i = 0;
+
+      while (line[i] != '-') {
+        addr1[i] = line[i];
+        ++i;
+      }
+      addr1[i] = '\0';
+
+      // Skip separator
+      ++i;
+      int off = i;
+
+      while (line[i] != '-') {
+        addr2[i - off] = line[i];
+        ++i;
+      }
+      addr2[i - off] = '\0';
+
+      // Parse heap start and end address
+      *heapStart = (unsigned long)strtol(addr1, NULL, 16);
+      *heapEnd = (unsigned long)strtol(addr2, NULL, 16);
+
+      // Found
+      found = 1;
     }
   }
 
@@ -91,45 +113,51 @@ unsigned long findHeapAddress(long pid) {
   // Close file
   fclose(fp);
 
-  return heapAddr;
+  return 0;
 }
 
-unsigned long findStringAddress(long pid, unsigned long heapAddr, char* string,
-                                size_t size) {
+int writeOnStringAddress(long pid, unsigned long addr, char* stringBuf,
+                         size_t size) {
   struct iovec local[1];
   struct iovec remote[1];
-  char buf[64];
-  
-  local[0].iov_base = buf;
-  local[0].iov_len = 64;
-  remote[0].iov_base = (void*)heapAddr;
-  remote[0].iov_len = size;
 
-  int counter = 0;
-  int maxCounter = 1000000; // max iterations
-  
-  // Iterate through heap
-  process_vm_readv(pid, local, 1, remote, 1, 0);
-  while (strcmp(string, local[0].iov_base) != 0 && counter < maxCounter) {
-    ++remote[0].iov_base;
-    process_vm_readv(pid, local, 1, remote, 1, 0);
-    ++counter;
-  }
-
-  unsigned long result = (unsigned long)remote[0].iov_base;
-  return (counter < maxCounter) ? result : -1;
-}
-
-int writeOnStringAddress(long pid, unsigned long addr, char* stringBuf, size_t size) {
-  struct iovec local[1];
-  struct iovec remote[1];
-  
   local[0].iov_base = stringBuf;
   local[0].iov_len = size;
   remote[0].iov_base = (void*)addr;
   remote[0].iov_len = size;
 
   return (process_vm_writev(pid, local, 1, remote, 1, 0) == size);
+}
+
+int writeOnString(long pid, unsigned long heapStart, unsigned long heapEnd,
+                  char* oldString, char* newString, size_t size) {
+  struct iovec local[1];
+  struct iovec remote[1];
+  char* buf = malloc(size * sizeof(char));
+
+  local[0].iov_base = buf;
+  local[0].iov_len = 64;
+  remote[0].iov_base = (void*)heapStart;
+  remote[0].iov_len = size;
+
+  // Iterate through heap
+  unsigned long scanZone = heapEnd - heapStart;
+  while (scanZone > 0) {
+    process_vm_readv(pid, local, 1, remote, 1, 0);
+    if (strcmp(oldString, local[0].iov_base) == 0) {
+      int writeRes = writeOnStringAddress(
+          pid, (unsigned long)remote[0].iov_base, newString, size);
+      if (writeRes == 0) {
+        free(buf);  // free local buffer
+        return 0;
+      }
+    }
+    ++remote[0].iov_base;
+    --scanZone;
+  }
+
+  free(buf);  // free local buffer
+  return 1;
 }
 
 int main(int argc, char* argv[]) {
@@ -142,32 +170,27 @@ int main(int argc, char* argv[]) {
   }
 
   // Find heap start address
-  unsigned long heapAddr = findHeapAddress(pid);
-  if (heapAddr == -1) {
+  unsigned long heapStart = -1, heapEnd;
+  int heapRes = findHeapAddress(pid, &heapStart, &heapEnd);
+  if (heapRes == -1) {
     fprintf(stderr, "Heap address not found\n");
     return EXIT_FAILURE;
   }
-  printf("Heap address: 0x%lx\n", heapAddr);
+  printf("HEAP begin: 0x%lx - end: 0x%lx\n", heapStart, heapEnd);
 
   char* oldString = "Change me please";
   char* newString = "It is true magic";
   size_t stringSize = 16;
 
-  // Retreive the string address
-  unsigned long addr = findStringAddress(pid, heapAddr, oldString, stringSize);
-  if (addr == -1) {
-    fprintf(stderr, "String not found\n");
-    return EXIT_FAILURE;
-  }
-  printf("String address: 0x%lx\n", addr);
-
   // Write the new string on memory
-  int writeRes = writeOnStringAddress(pid, addr, newString, stringSize);
+  printf("Scanning memory...\n");
+  int writeRes =
+      writeOnString(pid, heapStart, heapEnd, oldString, newString, stringSize);
 
   if (writeRes) {
     printf("Writing operation successful :)\n");
   } else {
-    fprintf(stderr, "Error when writing memory\n");
+    fprintf(stderr, "Error when writing on memory\n");
     return EXIT_FAILURE;
   }
 
