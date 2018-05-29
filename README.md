@@ -31,19 +31,19 @@ The executable will find the pid alone by looking through the `/proc` directory,
 
 Terminal 1:
 ```
-./stringloop
-0 - Change me please (0x556c0936d260)
-1 - Change me please (0x556c0936d260)
-2 - Change me please (0x556c0936d260)
-3 - Change me please (0x556c0936d260)
-4 - It is true magic (0x556c0936d260)
+$ ./stringloop
+Process ID : 3728
+0 - Change me please (0x5614d5324670)
+1 - Change me please (0x5614d5324670)
+2 - Change me please (0x5614d5324670)
+3 - It is true magic (0x5614d5324670)
 ```
 
 Terminal 2:
 ```
-sudo ./hack
-Process 5445 found: ./stringloop
-Heap address: 0x556c0936d000
-String address: 0x556c0936d260
+$ sudo ./hack
+Process 3728 found: ./stringloop
+HEAP begin: 0x5614d5324000 - end: 0x5614d5345000
+Scanning memory...
 Writing operation successful :)
 ```
