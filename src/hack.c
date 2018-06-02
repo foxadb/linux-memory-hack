@@ -116,6 +116,50 @@ int findHeapAddress(long pid, unsigned long* heapStart,
   return 0;
 }
 
+unsigned long addressPatternScan(long pid, unsigned long startAddr,
+                                 unsigned long endAddr, char* pattern,
+                                 size_t size, size_t offset) {
+  struct iovec local[1];
+  struct iovec remote[1];
+  char* buf = malloc(size * sizeof(char));  // local buffer
+
+  local[0].iov_base = buf;
+  local[0].iov_len = size;
+  remote[0].iov_base = (void*)startAddr;
+  remote[0].iov_len = size;
+
+  unsigned long scanZone = endAddr - startAddr;
+  while (scanZone > 0) {
+    process_vm_readv(pid, local, 1, remote, 1, 0);  // read memory
+
+    size_t counter = 0;
+    for (size_t i = 0; i < size; ++i) {
+      char remoteByte = buf[i];
+
+      char byteStr[2];
+      byteStr[0] = pattern[i];
+      byteStr[1] = pattern[++i];
+
+      if (byteStr[0] == '?' && byteStr[1] == '?') {
+        ++counter;
+      } else {
+        char patternByte = (char)strtol(byteStr, NULL, 16);
+        counter += (remoteByte == patternByte);
+      }
+    }
+
+    if (counter == size / 2) {
+      free(buf);  // free local buffer
+      return (unsigned long)remote[0].iov_base + offset;
+    }
+    ++remote[0].iov_base;
+    --scanZone;
+  }
+
+  free(buf);  // free local buffer
+  return -1;
+}
+
 int writeOnStringAddress(long pid, unsigned long addr, char* stringBuf,
                          size_t size) {
   struct iovec local[1];
@@ -129,19 +173,18 @@ int writeOnStringAddress(long pid, unsigned long addr, char* stringBuf,
   return (process_vm_writev(pid, local, 1, remote, 1, 0) == size);
 }
 
-int writeOnString(long pid, unsigned long heapStart, unsigned long heapEnd,
+int writeOnString(long pid, unsigned long startAddr, unsigned long endAddr,
                   char* oldString, char* newString, size_t size) {
   struct iovec local[1];
   struct iovec remote[1];
   char* buf = malloc(size * sizeof(char));
 
   local[0].iov_base = buf;
-  local[0].iov_len = 64;
-  remote[0].iov_base = (void*)heapStart;
+  local[0].iov_len = size;
+  remote[0].iov_base = (void*)startAddr;
   remote[0].iov_len = size;
 
-  // Iterate through heap
-  unsigned long scanZone = heapEnd - heapStart;
+  unsigned long scanZone = endAddr - startAddr;
   while (scanZone > 0) {
     process_vm_readv(pid, local, 1, remote, 1, 0);
     if (strcmp(oldString, local[0].iov_base) == 0) {
@@ -182,10 +225,26 @@ int main(int argc, char* argv[]) {
   char* newString = "It is true magic";
   size_t stringSize = 16;
 
-  // Write the new string on memory
+  // Pattern scanning
+  char* pattern = "2100??00??????00"; // unecessary ?? for testing
   printf("Scanning memory...\n");
-  int writeRes =
-      writeOnString(pid, heapStart, heapEnd, oldString, newString, stringSize);
+  unsigned long addr =
+      addressPatternScan(pid, heapStart, heapEnd, pattern, 8, 8);
+  if (addr != -1) {
+    printf("String address found: 0x%lx\n", addr);
+  } else {
+    fprintf(stderr, "Address not found\n");
+    return EXIT_FAILURE;
+  }
+
+  // Write the new string on memory
+  int writeRes = writeOnStringAddress(pid, addr, newString, stringSize);
+
+  /////////////////////////////////////////////////////////
+  // Without pattern scanning
+  // int writeRes = writeOnString(pid, heapStart, heapEnd, oldString, newString,
+  // stringSize);
+  /////////////////////////////////////////////////////////
 
   if (writeRes) {
     printf("Writing operation successful :)\n");

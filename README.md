@@ -45,5 +45,6 @@ $ sudo ./hack
 Process 3728 found: ./stringloop
 HEAP begin: 0x5614d5324000 - end: 0x5614d5345000
 Scanning memory...
+String address found: 0x5614d5324670
 Writing operation successful :)
 ```
