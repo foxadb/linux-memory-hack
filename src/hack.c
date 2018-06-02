@@ -137,8 +137,8 @@ unsigned long addressPatternScan(long pid, unsigned long startAddr,
       char remoteByte = buf[i];
 
       char byteStr[2];
-      byteStr[0] = pattern[i];
-      byteStr[1] = pattern[++i];
+      byteStr[0] = pattern[2 * i];
+      byteStr[1] = pattern[2 * i + 1];
 
       if (byteStr[0] == '?' && byteStr[1] == '?') {
         ++counter;
@@ -148,7 +148,7 @@ unsigned long addressPatternScan(long pid, unsigned long startAddr,
       }
     }
 
-    if (counter == size / 2) {
+    if (counter == size) {
       free(buf);  // free local buffer
       return (unsigned long)remote[0].iov_base + offset;
     }
